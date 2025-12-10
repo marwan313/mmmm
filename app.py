@@ -1,39 +1,67 @@
 from flask import Flask, request, jsonify
-import yt_dlp
+from yt_dlp import YoutubeDL
+import traceback
 
 app = Flask(__name__)
 
-def extract_best_audio(url):
-    ydl_opts = {
-        "quiet": True,
-        "skip_download": True,
-        "format": "bestaudio/best",
-    }
+class YTDLPLogger:
+    def debug(self, msg):
+        print("[DEBUG]", msg)
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
-        audio_format = info.get("url")
-        title = info.get("title") or "audio"
-        # استبدال الأحرف غير الصالحة في اسم الملف
-        safe_title = "".join(c for c in title if c.isalnum() or c in " _-").strip()
-        return {
-            "title": safe_title,
-            "audio_url": audio_format
-        }
+    def warning(self, msg):
+        print("[WARNING]", msg)
+
+    def error(self, msg):
+        print("[ERROR]", msg)
+
 
 @app.route("/extract", methods=["GET"])
 def extract():
     url = request.args.get("url")
+
     if not url:
-        return jsonify({"error": "Parameter 'url' is required"}), 400
+        return jsonify({"status": "error", "message": "No URL provided"}), 400
+
+    print(f"📥 Received request: {url}")
+
+    ydl_opts = {
+        "format": "bestaudio/best",
+        "quiet": False,
+        "noplaylist": True,
+        "nocheckcertificate": True,
+        "ignoreerrors": False,
+        "extract_flat": False,
+        "logger": YTDLPLogger(),
+        "http_headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+    }
 
     try:
-        result = extract_best_audio(url)
-        if not result["audio_url"]:
-            return jsonify({"error": "لم يتم العثور على رابط صوتي صالح"}), 404
-        return jsonify(result)
+        with YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            audio_url = info.get("url")
+
+            print(f"✅ Extracted audio URL: {audio_url}")
+
+            return jsonify({
+                "status": "success",
+                "audio_url": audio_url,
+                "title": info.get("title")
+            })
+
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print("🔥 ERROR OCCURRED IN /extract")
+        print(traceback.format_exc())  # يطبع الخطأ بالكامل في Render log
+
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+            "details": traceback.format_exc(),
+        }), 500
+
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    print("🚀 Server Started on port 10000")
+    app.run(host="0.0.0.0", port=10000)
